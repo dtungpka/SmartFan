@@ -37,7 +37,8 @@ HOLD:
 2: RED to green pwm: off -> on
 3: YELLOW: water saving pwm at slow speed: release: choose speed red yellow green
 */
-
+int showLED(int led_mode);
+int CheckHold(bool thres);
 void setup() {
 	pinMode(LED_GREEN, OUTPUT);
 	pinMode(LED_YELLOW, OUTPUT);
@@ -101,8 +102,7 @@ void Humid(int t) {
 	}
 }
 
-int showLED(int led_mode);
-int CheckHold(bool thres);
+
 void SetMode() {
 	int holdLV = CheckHold(!(mode == ON || mode == OFF));
 	if (holdLV == 0)
@@ -160,6 +160,7 @@ void loop() {
 	}
 }
 int showLED(int led_mode) {
+  int value_red = 0, value_yellow = 0, value_green = 0;
 	switch (led_mode)
 	{
 	case -1:
@@ -178,7 +179,7 @@ int showLED(int led_mode) {
 		delay(TIME_HOLD / 10);
 		return TIME_HOLD / 5;
 	case 1: // green -> red
-		int value_red = 0, value_yellow = 0, value_green = 0;
+		
 		for (int i = 0; i < 765; i += 5)
 		{
 			value_green = max(i, 255);
@@ -197,7 +198,7 @@ int showLED(int led_mode) {
 		analogWrite(LED_RED, 0);
 		return 765 / 5;
 	case 2: //red -> green
-		int value_red = 0, value_yellow = 0, value_green = 0;
+		
 		for (int i = 765; i > 0; i -= 5)
 		{
 			value_green = max(i, 255);
@@ -346,4 +347,3 @@ int CheckHold(bool thres) { //thres: 0: green
 	}
 	return level;
 }
-
