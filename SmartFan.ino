@@ -3,7 +3,7 @@
  Created:	6/10/2022 6:12:34 PM
  Author:	Admin
 */
-#define TIME_HOLD 500
+#define TIME_HOLD 1000
 #define TIME_OUT 1000
 #define TOUCH_THRES 400
 // the setup function runs once when you press reset or power the board
@@ -16,9 +16,9 @@ int WATER_PIN = 4;
 int SENSOR_PIN = A1;
 int TOUCH_1 = A2;
 int TOUCH_2 = A3;
-uint32_t sec=0,micro_sec = 0;
+uint32_t sec=-1,micro_sec = 0;
 int holding = 0;
-
+int water_mode = 1;
 enum Mode {
 	ON = 0, //GREEN
 	OFF = -1, //RED LED
@@ -52,6 +52,28 @@ void setup() {
 bool Touch1() {
 	return analogRead(TOUCH_1) < TOUCH_THRES;
 }
+void LEDThres() {
+	if (sec > NIGHT_SAVING_TIME)
+	{
+		digitalWrite(LED_RED, 1);
+	}
+	else {
+		digitalWrite(LED_YELLOW, 0);
+		digitalWrite(LED_GREEN, 0);
+		digitalWrite(LED_RED, (sec < NIGHT_SAVING_TIME / 3) && sec % 3 ? 0 : 1);
+		return;
+	}
+	if (sec > NIGHT_SAVING_TIME*2)
+	{
+		digitalWrite(LED_YELLOW, 1);
+	}
+	else {
+		digitalWrite(LED_GREEN, 0);
+		digitalWrite(LED_YELLOW, (sec- NIGHT_SAVING_TIME < NIGHT_SAVING_TIME / 3) && sec % 3 ? 0 : 1);
+		return;
+	}
+		digitalWrite(LED_GREEN, (sec - NIGHT_SAVING_TIME*2 < NIGHT_SAVING_TIME / 3) && sec % 3 ? 0 : 1);
+}
 void Humid(int t) {
 	int checkFreq = 1000;
 	while (true)
@@ -66,9 +88,12 @@ void Humid(int t) {
 			micro_sec += checkFreq * t * 2;
 			if (micro_sec >= 1000000)
 			{
-				sec--;
+				if (sec > 0) {
+					LEDThres();
+					sec--;
+				}
 				micro_sec = 0;
-				if (sec <= 0)return;
+				if (sec == 0)return;
 			}
 			if (Touch1())return;
 
@@ -79,16 +104,22 @@ void Humid(int t) {
 int showLED(int led_mode);
 int CheckHold(bool thres);
 void SetMode() {
-	int holdLV;
-	if (mode == WATER_SAVING)
+	int holdLV = CheckHold(!(mode == ON || mode == OFF));
+	if (holdLV == 0)
 	{
-		int lv = 
+		mode = (mode == ON || mode == OFF) ? mode : ON;
 	}
-	else  holdLV = CheckHold(false);
-	if ((mode == ON || mode == OFF) && holdLV < 1)
-	{
-		mode = mode == ON ? OFF : ON;
-		return;
+	else if (holdLV == 1) {
+		sec = CheckHold(true) * NIGHT_SAVING_TIME;
+		mode = TIMER_OFF;
+	}
+	else if (holdLV == 2) {
+		sec = CheckHold(true) * NIGHT_SAVING_TIME;
+		mode = TIMER_ON;
+	}
+	else if (holdLV == 3) {
+		water_mode = 10 + CheckHold(true) * 2;
+		mode = WATER_SAVING;
 	}
 	
 
@@ -98,14 +129,31 @@ void loop() {
 	switch (mode)
 	{
 	case ON:
+		digitalWrite(LED_GREEN, 1);
+		Humid(10);
+		mode = OFF;
+		digitalWrite(LED_GREEN, 0);
+		digitalWrite(LED_YELLOW, 0);
 		break;
 	case OFF:
+		for (int i = -255; i < 255; i++)
+		{
+			digitalWrite(LED_RED, abs(i));
+			if (Touch1())SetMode();
+			delay(10);
+		}
 		break;
 	case TIMER_ON:
+		showLED(1);
+		Humid(10);
 		break;
 	case TIMER_OFF:
+		showLED(2);
+		Humid(10);
 		break;
 	case WATER_SAVING:
+		showLED(3);
+		Humid(water_mode);
 		break;
 	default:
 		break;
@@ -249,41 +297,53 @@ int showLED(int led_mode) {
 }
 
 int CheckHold(bool thres) { //thres: 0: green
-	int time_out = 200;
-	int holdLv = -1;
-	int curr_hold = 0;
+	int time_out = TIME_OUT;
+	int hd = 0;
+	int level = 0;
 	while (time_out > 0)
 	{
-		if (!thres) curr_hold = showLED(holdLv);
-		else  curr_hold = showLED(holdLv + 6);
 		if (Touch1())
 		{
-			holding+= curr_hold;
+			hd++;
 			time_out = TIME_OUT;
 		}
-		if (holding >= TIME_HOLD) {
-			if(!thres)showLED(4);
-			holdLv = holdLv == 5 ? -1 : holdLv + 1;
-			holdLv = holdLv == 10 ? 6 : holdLv + 1;
-			holding = 0;
+		else
+		{
+			if (hd > 0 && hd < TIME_HOLD)level = level == 4 ? 0 : level+ 1;
+			if (hd >= TIME_HOLD) { showLED(4); return -1; }
+			hd = 0;
 		}
-		time_out-= curr_hold;
+		time_out--;
+		
+		if (thres)
+		{
+			digitalWrite(LED_GREEN, level == 3);
+			digitalWrite(LED_YELLOW, level >= 2 );
+			digitalWrite(LED_RED, level >= 1);
+		}
+		else {
+			if ((mode == ON || mode == OFF)) {
+				digitalWrite(LED_GREEN, mode == ON);
+				digitalWrite(LED_RED, mode == OFF);
+				mode = mode == ON ? OFF : ON;
+				return 0;
+			}
+			else {
+				digitalWrite(LED_GREEN, level == 1);
+				digitalWrite(LED_YELLOW, level == 3);
+				digitalWrite(LED_RED, level == 2);
+			}
+		}
 		delay(1);
+
+
 	}
-	if (holdLv > -1)
-	{
-		digitalWrite(LED_YELLOW, 0);
-		digitalWrite(LED_GREEN, 0);
-		digitalWrite(LED_RED, 0);
-		delay(100);
-		delay(showLED(holdLv));
-		digitalWrite(LED_YELLOW, 0);
-		digitalWrite(LED_GREEN, 0);
-		digitalWrite(LED_RED, 0);
+	if (thres) {
+		showLED(level + 5);
 	}
-	else if (mode == ON || mode == OFF) {
-		return  mode == ON ? -1 : 0;
+	else {
+		showLED(level);
 	}
-	return holdLv;
+	return level;
 }
 
